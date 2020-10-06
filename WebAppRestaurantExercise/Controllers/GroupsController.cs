@@ -24,7 +24,7 @@ namespace WebAppRestaurantExercise.Controllers
         [HttpPost]
         public void OnArray([FromBody] AddClientsGroup request)
         {
-            if (request.Size != 0 && request.Size != null)
+            if (request.Size != 0)
             {
                 if (_random.Next(1, 11) <= 3)
                 {
