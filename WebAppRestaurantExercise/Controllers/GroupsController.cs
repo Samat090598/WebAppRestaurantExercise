@@ -56,8 +56,6 @@ namespace WebAppRestaurantExercise.Controllers
             else
             {
                 Table freeTable = new Table();
-                // Сортируем столики
-                freeTables = freeTables.OrderBy(f => f.FreeSize).ToList();
                 // Получаем свободный столик, если нет, то столик в котором сидят люди
                 freeTable = freeTables.FirstOrDefault(f => f.IsFree) 
                                     ?? freeTables.FirstOrDefault(f => !f.IsFree);
@@ -67,13 +65,12 @@ namespace WebAppRestaurantExercise.Controllers
                     Size = request.Size,
                     Status = Status.OnTable
                 };
-                // Процедура для добавления группы клиентов в базу
-                _connection.Execute("AddClientsGroup", clientsGroup);
-                //Посадка на стол
-                // Изменяем размер столика 
                 freeTable.FreeSize -= clientsGroup.Size;
-                // Обновляем в базе данные этого столика
-                _connection.Execute("UpdateTable", freeTable);
+                // Добавляем группу в базу данных и изменяем столик
+                _connection.Execute("AddClientsGroupAndUpdateTable", new
+                {
+                    clientsGroup.Size, clientsGroup.Status, clientsGroup.TableId, freeTable.IsFree, freeTable.FreeSize
+                });
                 // Получаем группу клиентов которые стоят в очереди
                 var clientsGroups = _connection.Query<ClientsGroup>("GetClientsGroupInQueue");
                 // Если есть такие, то проверям их состояние
@@ -104,14 +101,19 @@ namespace WebAppRestaurantExercise.Controllers
             if (table != null)
             {
                 table.FreeSize += group.Size;
-                // Удаляем группу из базы данных
-                _connection.Execute("RemoveClientsGroup", group);
-                // Получаем группу клиентов которые стоят в очереди, сортируем по Id
-                var clientsGroupsInTheQueue = _connection.Query<ClientsGroup>("GetClientsGroupInQueue")
-                    .OrderBy(c => c.Id).ToList();
+                // Удаляем группу из базы и изменяем столик
+                _connection.Execute("RemoveClientsGroupAndUpdateTable", new
+                {
+                    group.Id, group.TableId, table.IsFree, table.FreeSize 
+                });
+                
+                // Получаем группу клиентов которые стоят в очереди
+                var clientsGroupsInTheQueue = _connection.Query<ClientsGroup>("GetClientsGroupInQueue").ToList();
+                // Получаем подходящую группу по размеру на столик
                 var fromQueueClient = clientsGroupsInTheQueue.FirstOrDefault(c => c.Size <= table.FreeSize);
                 if (fromQueueClient != null)
                 {
+                    // Получаем группы стоящие перед fromQueueClient
                     List<ClientsGroup> clientsGroupAheadOfQueue = clientsGroupsInTheQueue
                         .Where(c => clientsGroupsInTheQueue.IndexOf(c) <
                                     clientsGroupsInTheQueue.IndexOf(fromQueueClient)).ToList();
@@ -125,10 +127,12 @@ namespace WebAppRestaurantExercise.Controllers
                     // Изменяем статус и TableId этой группы
                     fromQueueClient.TableId = table.Id;
                     fromQueueClient.Status = Status.OnTable;
-                    _connection.Execute("UpdateClientsGroupTable", fromQueueClient);
+                    // Изменяем группу и столик из базы
+                    _connection.Execute("UpdateClientsGroupAndUpdateTable", new
+                    {
+                        fromQueueClient.Id, fromQueueClient.Status, fromQueueClient.TableId, table.IsFree, table.FreeSize
+                    });
                 }
-                // Обновляем в базе данные этого столика
-                _connection.Execute("UpdateTable", table);
             }
         }
     }
